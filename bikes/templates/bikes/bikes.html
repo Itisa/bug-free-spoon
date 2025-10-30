@@ -1,0 +1,669 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>城市公共自行车可视化</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="{% static 'js/echarts.js' %}"></script>
+  <style>
+    :root{--bg:#0f172a;--panel:#111827;--text:#e5e7eb;--muted:#9ca3af;--acc:#22d3ee;--border:#1f2937}
+    *{box-sizing:border-box} body{margin:0;background:#0f172a;color:#e5e7eb;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(17,24,39,.9),rgba(17,24,39,.7));backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;gap:16px;align-items:center}
+    header h1{margin:0;font-size:20px;font-weight:700} header .hint{color:var(--muted);font-size:12px}
+    .layout{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 66px)}
+    nav{border-right:1px solid var(--border);background:linear-gradient(180deg,#0b1020,#0b0f1a);padding:16px;position:sticky;top:66px;height:calc(100vh - 66px);overflow:auto}
+    .nav-title{font-size:12px;color:var(--muted);margin:6px 0 12px;letter-spacing:.1em;text-transform:uppercase}
+    .nav-btn{width:100%;text-align:left;background:#0f172a;border:1px solid var(--border);color:#e5e7eb;padding:10px 12px;border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.2s;font-size:14px}
+    .nav-btn:hover{border-color:#334155;transform:translateY(-1px)} .nav-btn.active{outline:2px solid var(--acc)}
+    .content{padding:18px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px}
+    .card h2{margin:4px 0 8px;font-size:16px;display:flex;align-items:center;gap:8px}
+    .controls{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;align-items:end}
+    .controls .field{grid-column:span 3} .controls .field.lg{grid-column:span 6}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+    input,select{width:100%;background:#0b1220;border:1px solid var(--border);color:#e5e7eb;border-radius:10px;padding:10px;font-size:14px}
+    .muted{color:var(--muted)}
+    .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .kpi .item{background:#0b1220;border:1px solid var(--border);border-radius:12px;padding:10px}
+    .kpi .label{font-size:12px;color:var(--muted)} .kpi .value{font-size:18px;font-weight:700;margin-top:6px}
+    .chart{width:100%;height:380px} .chart.tall{height:420px}
+    .hidden{display:none}
+    .diff{font-size:12px;color:#a5b4fc;margin-left:8px}
+    .inline-btn{background:#0f172a;border:1px solid var(--border);color:#e5e7eb;border-radius:10px;padding:6px 10px;cursor:pointer}
+    .inline-btn:hover{border-color:#334155}
+
+    input[type="date"]{ padding-right:36px; }
+    input[type="date"]::-webkit-calendar-picker-indicator{ filter: invert(1); opacity:1; cursor:pointer; }
+    input[type="date"]::-webkit-clear-button{ display:none; }
+    input[type="date"]::-webkit-inner-spin-button{ display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>城市公共自行车 · 数据可视化</h1>
+    <div class="hint">数据源：/bikes/api · ECharts</div>
+  </header>
+
+  <div class="layout">
+    <nav>
+      <div class="nav-title">功能导航</div>
+      <button class="nav-btn active" data-target="feature1">功能1 · 按日期浏览</button>
+      <button class="nav-btn" data-target="feature2">功能2 · 阈值分组对比</button>
+      <button class="nav-btn" data-target="feature3">功能3 · 多条件筛选合成</button>
+    </nav>
+
+    <main class="content">
+      <!-- 功能1 -->
+      <section id="feature1" class="feature card">
+        <h2>
+          功能1 · 按日期浏览每日用车变化
+          <button id="f1-prev" class="inline-btn" title="上一天">上一天</button>
+          <button id="f1-next" class="inline-btn" title="下一天">下一天</button>
+        </h2>
+        <div class="controls" style="margin-bottom:8px;">
+          <div class="field lg">
+            <label>日期区间</label>
+            <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;">
+              <input type="date" id="f1-start" />
+              <div class="muted" style="align-self:center;">—</div>
+              <input type="date" id="f1-end" />
+            </div>
+          </div>
+          <div class="field">
+            <label>平滑窗（天）</label>
+            <input type="number" id="f1-smooth" min="1" value="1" />
+          </div>
+          <div class="field">
+            <button class="nav-btn" id="f1-apply">应用到图表</button>
+          </div>
+        </div>
+
+        <div id="chart-daily" class="chart"></div>
+
+        <div class="card" id="f1-dayinfo" style="margin-top:12px;">
+          <div class="muted">提示：点击上方图表中的数据点或竖直虚线，展示当天详情。</div>
+          <div id="f1-day-summary" class="kpi" style="margin-top:8px;"></div>
+        </div>
+
+        <div class="card">
+          <h2 id="f1-detail-title" class="muted">（等待选择某一天）</h2>
+          <div id="chart-hourly" class="chart tall"></div>
+        </div>
+      </section>
+
+      <!-- 功能2 -->
+      <section id="feature2" class="feature card hidden">
+        <h2>功能2 · 单指标阈值分组对比
+          <span id="f2-diff" class="diff"></span>
+        </h2>
+        <div class="controls" style="margin-bottom:8px;">
+          <div class="field lg">
+            <label>日期区间</label>
+            <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;">
+              <input type="date" id="f2-start" />
+              <div class="muted" style="align-self:center;">—</div>
+              <input type="date" id="f2-end" />
+            </div>
+          </div>
+          <div class="field">
+            <label>指标</label>
+            <select id="f2-metric">
+              <option value="avg_temperature">平均气温 (°C)</option>
+              <option value="max_temperature">最高气温 (°C)</option>
+              <option value="min_temperature">最低气温 (°C)</option>
+              <option value="precipitation">降水量 (mm)</option>
+              <option value="windspeed">风速</option>
+              <option value="snow">降雪量</option>
+              <option value="pressure">气压</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>阈值</label>
+            <input type="number" id="f2-threshold" value="20" />
+          </div>
+          <div class="field">
+            <button class="nav-btn" id="f2-apply">应用</button>
+          </div>
+        </div>
+        <div id="chart-f2-combined" class="chart"></div>
+      </section>
+
+      <!-- 功能3 -->
+      <section id="feature3" class="feature card hidden">
+        <h2>功能3 · 多条件筛选后合成一天的小时分布</h2>
+
+        <div class="controls" style="margin-bottom:8px;">
+          <div class="field lg">
+            <label>日期区间</label>
+            <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;">
+              <input type="date" id="f3-start" />
+              <div class="muted" style="align-self:center;">—</div>
+              <input type="date" id="f3-end" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 周几筛选（默认全选） -->
+        <div class="controls" style="margin-bottom:8px;">
+          <div class="field lg" style="grid-column:span 12;">
+            <label>按周几筛选（默认全选）</label>
+            <div id="f3-weekdays" style="display:flex;flex-wrap:wrap;gap:8px;">
+              <label><input type="checkbox" data-wd="1" checked /> 周一</label>
+              <label><input type="checkbox" data-wd="2" checked /> 周二</label>
+              <label><input type="checkbox" data-wd="3" checked /> 周三</label>
+              <label><input type="checkbox" data-wd="4" checked /> 周四</label>
+              <label><input type="checkbox" data-wd="5" checked /> 周五</label>
+              <label><input type="checkbox" data-wd="6" checked /> 周六</label>
+              <label><input type="checkbox" data-wd="0" checked /> 周日</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls" style="margin-bottom:8px;">
+          <div class="field"><label>平均气温 Min</label><input type="number" id="f3-avgtemp-min" placeholder="" /></div>
+          <div class="field"><label>平均气温 Max</label><input type="number" id="f3-avgtemp-max" placeholder="" /></div>
+          <div class="field"><label>降水量 Min</label><input type="number" id="f3-precip-min" placeholder="" /></div>
+          <div class="field"><label>降水量 Max</label><input type="number" id="f3-precip-max" placeholder="" /></div>
+          <div class="field"><label>风速 Min</label><input type="number" id="f3-wind-min" placeholder="" /></div>
+          <div class="field"><label>风速 Max</label><input type="number" id="f3-wind-max" placeholder="" /></div>
+          <div class="field"><label>气压 Min</label><input type="number" id="f3-press-min" placeholder="" /></div>
+          <div class="field"><label>气压 Max</label><input type="number" id="f3-press-max" placeholder="" /></div>
+          <div class="field"><button class="nav-btn" id="f3-apply">筛选并合成</button></div>
+        </div>
+
+        <div class="kpi" style="margin-bottom:8px;">
+          <div class="item"><div class="label">匹配天数</div><div class="value" id="f3-days">—</div></div>
+          <div class="item"><div class="label">总骑行次数</div><div class="value" id="f3-total-counts">—</div></div>
+          <div class="item"><div class="label">平均骑行时长(分钟，带权)</div><div class="value" id="f3-wavg-min">—</div></div>
+          <div class="item"><div class="label">条件摘要</div><div class="value" id="f3-cond-text" style="font-size:14px;">—</div></div>
+        </div>
+
+        <div id="chart-merged-hourly" class="chart tall"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ===== 工具函数 =====
+    const fmt2 = (n) => (n==null || isNaN(n)) ? '—' : Number(n).toFixed(2);
+    const parseDate = (s) => new Date(s + 'T00:00:00');
+    const sum = (arr) => (arr||[]).reduce((a,b)=>a+(+b||0),0);
+    const arrAdd = (a,b)=>a.map((v,i)=>(v||0)+(b?.[i]||0));
+    const movingAvg = (arr,w=1)=>{ if(w<=1) return arr.slice(); const out=[]; for(let i=0;i<arr.length;i++){const s=Math.max(0,i-w+1); const seg=arr.slice(s,i+1); out.push(seg.reduce((a,b)=>a+b,0)/seg.length)} return out; };
+    const secToMin = (s)=> (s==null? 0 : s/60);
+    function weightedAvg(values, weights){ let sw=0, sv=0; for(let i=0;i<values.length;i++){const w=+weights[i]||0, v=+values[i]||0; sw+=w; sv+=w*v;} return sw>0? (sv/sw): null; }
+    const hours = Array.from({length:24}, (_,i)=> `${i}点`);
+    const HEADER_H = () => document.querySelector('header')?.offsetHeight || 60;
+    function smoothScrollToEl(el){ if(!el) return; const y = el.getBoundingClientRect().top + window.scrollY - (HEADER_H() + 12); window.scrollTo({ top:y, behavior:'smooth' }); }
+    function weekdayZh(isoDate){ const d = new Date(isoDate + 'T00:00:00'); return ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]; }
+    function weekdayIndex(isoDate){ return new Date(isoDate + 'T00:00:00').getDay(); } // 0=周日..6=周六
+
+    // —— 显示用千分位（不要参与计算）——
+    const nf0 = new Intl.NumberFormat('en-US'); // 1,234
+    const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); // 1,234.56
+    const fmtc0 = (n) => (n==null || isNaN(n)) ? '—' : nf0.format(Math.round(Number(n)));
+    const fmtc2 = (n) => (n==null || isNaN(n)) ? '—' : nf2.format(Number(n));
+
+    // ===== 数据获取 =====
+    async function loadData(){
+      const res = await fetch('/bikes/api');
+      if(!res.ok) throw new Error('API 请求失败');
+      const data = await res.json();
+      data.sort((a,b)=> parseDate(a.date) - parseDate(b.date));
+      data.forEach(d=>{
+        d.total_counts = sum(d.hourly_counts||[]);
+        const wAvgSec = weightedAvg(d.hourly_durations||[], d.hourly_counts||[]);
+        d.weighted_avg_duration_min = wAvgSec==null? null : (wAvgSec/60);
+      });
+      return data;
+    }
+
+    // ===== 日期范围过滤 & 校验 =====
+    function filterByDateRange(data, startStr, endStr){
+      if(!startStr && !endStr) return data;
+      const s = startStr ? parseDate(startStr).getTime() : -Infinity;
+      const e = endStr ? parseDate(endStr).getTime() :  Infinity;
+      return data.filter(d=> { const t = parseDate(d.date).getTime(); return t>=s && t<=e; });
+    }
+    function invalidRange(startStr, endStr){
+      if(!startStr || !endStr) return false;
+      return startStr > endStr;
+    }
+
+    // ===== ECharts 实例 =====
+    let dailyChart, hourlyChart, f2CombinedChart, mergedHourlyChart;
+
+    // 功能1 当前视图信息
+    let f1ViewDates = [];
+    let f1SelectedDate = '';
+
+    document.addEventListener('DOMContentLoaded', async ()=>{
+      document.querySelectorAll('.nav-btn[data-target]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          document.querySelectorAll('.nav-btn[data-target]').forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
+          const id = btn.getAttribute('data-target');
+          document.querySelectorAll('.feature').forEach(sec=>sec.classList.add('hidden'));
+          document.getElementById(id).classList.remove('hidden');
+          setTimeout(()=>[dailyChart,hourlyChart,f2CombinedChart,mergedHourlyChart].forEach(c=>c?.resize()),50);
+        });
+      });
+
+      const data = await loadData();
+
+      // 默认日期：最早~最晚（功能1/2/3）
+      if(data.length){
+        const first = data[0].date, last = data[data.length-1].date;
+        const setIfEmpty = (id,val)=>{ const el=document.getElementById(id); if(el && !el.value) el.value = val; };
+        setIfEmpty('f1-start', first); setIfEmpty('f1-end', last);
+        setIfEmpty('f2-start', first); setIfEmpty('f2-end', last);
+        const f3s = document.getElementById('f3-start'); const f3e = document.getElementById('f3-end');
+        if(f3s && !f3s.value) f3s.value = first; if(f3e && !f3e.value) f3e.value = last;
+      }
+
+      initFeature1(data);
+      initFeature2(data);
+      initFeature3(data);
+    });
+
+    // ============ 功能1 ============
+    function f1GoPrev(data){
+      if(!f1ViewDates.length) return;
+      const i = Math.max(0, f1ViewDates.indexOf(f1SelectedDate));
+      const ni = Math.max(0, i-1);
+      const date = f1ViewDates[ni];
+      const found = data.find(d=>d.date===date);
+      if(found){
+        f1SelectedDate = date;
+        showDaySummary(found); showHourlyDetail(found);
+        smoothScrollToEl(document.getElementById('f1-day-summary'));
+      }
+    }
+    function f1GoNext(data){
+      if(!f1ViewDates.length) return;
+      const i = Math.max(0, f1ViewDates.indexOf(f1SelectedDate));
+      const ni = Math.min(f1ViewDates.length-1, i+1);
+      const date = f1ViewDates[ni];
+      const found = data.find(d=>d.date===date);
+      if(found){
+        f1SelectedDate = date;
+        showDaySummary(found); showHourlyDetail(found);
+        smoothScrollToEl(document.getElementById('f1-day-summary'));
+      }
+    }
+
+    function initFeature1(data){
+      dailyChart = echarts.init(document.getElementById('chart-daily'));
+
+      function renderDaily(rangeData){
+        f1ViewDates = rangeData.map(d=>d.date);
+        const totals = rangeData.map(d=>d.total_counts);
+        const w = Math.max(1, parseInt(document.getElementById('f1-smooth').value||'1',10));
+        const y = movingAvg(totals, w);
+
+        dailyChart.setOption({
+          animation:true, animationDuration:300,
+          backgroundColor:'transparent',
+          tooltip:{
+            trigger:'axis',
+            renderMode:'richText',
+            transitionDuration:0,
+            confine:true,
+            axisPointer:{ type:'line', snap:true, animation:false, lineStyle:{ type:'dashed' } },
+            formatter:(ps)=>{
+              const p = Array.isArray(ps)? ps[0] : ps;
+              const date = p.axisValue;
+              return `${date}（${weekdayZh(date)}）<br/>每日用车数量：${nf0.format(p.data)}`;
+            }
+          },
+          dataZoom:[{type:'inside'},{type:'slider'}],
+          grid:{top:28,left:48,right:16,bottom:48},
+          xAxis:{ type:'category', data:f1ViewDates, boundaryGap:false,
+                  axisLabel:{ color:'#94a3b8' }, axisLine:{ lineStyle:{color:'#334155'} } },
+          yAxis:{ type:'value', axisLabel:{ color:'#94a3b8', formatter:(v)=> nf0.format(v) }, splitLine:{ lineStyle:{ color:'#1f2937'} } },
+          series:[{
+            type:'line',
+            name:'每日用车数量',
+            smooth:false,
+            showSymbol:false,
+            lineStyle:{ width:2 },
+            data:y,
+            sampling:'lttb',
+            progressive:8000,
+            progressiveThreshold:4000,
+            animation:false
+          }]
+        });
+
+        if(!f1SelectedDate || !f1ViewDates.includes(f1SelectedDate)){
+          f1SelectedDate = f1ViewDates[f1ViewDates.length-1];
+          const found = rangeData[rangeData.length-1];
+          if(found){ showDaySummary(found); showHourlyDetail(found); }
+        }
+      }
+
+      renderDaily(data);
+
+      document.getElementById('f1-apply').addEventListener('click', ()=>{
+        const s = document.getElementById('f1-start').value;
+        const e = document.getElementById('f1-end').value;
+        if(invalidRange(s,e)){ alert('开始日期不能晚于结束日期'); return; }
+        const sub = filterByDateRange(data, s, e);
+        renderDaily(sub.length? sub : data);
+      });
+
+      dailyChart.on('click', (params)=>{
+        if(params.componentType==='series'){
+          const date = params.name;
+          const found = data.find(d=>d.date===date);
+          if(found){
+            f1SelectedDate = date;
+            showDaySummary(found); showHourlyDetail(found);
+            smoothScrollToEl(document.getElementById('f1-day-summary'));
+          }
+        }
+      });
+
+      dailyChart.getZr().on('click', (zrEvt)=>{
+        const point = [zrEvt.offsetX, zrEvt.offsetY];
+        const coord = dailyChart.convertFromPixel({seriesIndex:0}, point);
+        if(!coord) return;
+        const xData = dailyChart.getOption().xAxis[0].data;
+        let xIdx = Math.max(0, Math.min(xData.length-1, Math.round(coord[0])));
+        const date = xData[xIdx];
+        const found = data.find(d=>d.date===date);
+        if(found){
+          f1SelectedDate = date;
+          showDaySummary(found); showHourlyDetail(found);
+          smoothScrollToEl(document.getElementById('f1-day-summary'));
+        }
+      });
+
+      document.getElementById('f1-prev').addEventListener('click', ()=>f1GoPrev(data));
+      document.getElementById('f1-next').addEventListener('click', ()=>f1GoNext(data));
+
+      document.addEventListener('keydown', (e)=>{
+        const f1Visible = !document.getElementById('feature1').classList.contains('hidden');
+        if(!f1Visible) return;
+        if(e.key === 'ArrowLeft'){ e.preventDefault(); f1GoPrev(data); }
+        if(e.key === 'ArrowRight'){ e.preventDefault(); f1GoNext(data); }
+      });
+
+      if(data.length){
+        f1SelectedDate = data[data.length-1].date;
+        showDaySummary(data[data.length-1]);
+        showHourlyDetail(data[data.length-1]);
+      }
+    }
+
+    function showDaySummary(d){
+      const wrap = document.getElementById('f1-day-summary');
+      wrap.innerHTML = `
+        <div class="item"><div class="label">日期</div><div class="value">${d.date}</div></div>
+        <div class="item"><div class="label">星期</div><div class="value">${weekdayZh(d.date)}</div></div>
+        <div class="item"><div class="label">用车总量</div><div class="value">${fmtc0(d.total_counts)}</div></div>
+        <div class="item"><div class="label">当天平均时长（分钟，带权）</div><div class="value">${fmtc2(d.weighted_avg_duration_min)}</div></div>
+        <div class="item"><div class="label">平均气温</div><div class="value">${fmtc2(d.avg_temperature)} °C</div></div>
+        <div class="item"><div class="label">最高/最低气温</div><div class="value">${fmtc2(d.max_temperature)} / ${fmtc2(d.min_temperature)} °C</div></div>
+        <div class="item"><div class="label">降水量 / 降雪量</div><div class="value">${fmtc2(d.precipitation)} / ${fmtc2(d.snow)}</div></div>
+        <div class="item"><div class="label">风速 / 气压</div><div class="value">${fmtc2(d.windspeed)} / ${fmtc2(d.pressure)}</div></div>
+      `;
+    }
+
+    function showHourlyDetail(d){
+      const dom = document.getElementById('chart-hourly');
+      hourlyChart = hourlyChart || echarts.init(dom);
+      document.getElementById('f1-detail-title').textContent = `小时详情 · ${d.date}（${weekdayZh(d.date)}）`;
+
+      const counts = (d.hourly_counts||Array(24).fill(0));
+      const durationsMin = (d.hourly_durations||Array(24).fill(0)).map(secToMin).map(x=> Number(fmt2(x)));
+
+      // 当前天的数量轴：向上取到 1000 的整倍数（至少 1000）
+      const maxCount = Math.max(...counts.map(v=>+v||0), 0);
+      const yMax = Math.max(1000, Math.ceil(maxCount / 1000) * 1000);
+
+      hourlyChart.setOption({
+        backgroundColor:'transparent',
+        tooltip:{ trigger:'axis',
+          formatter:(params)=>{
+            const p0 = params.find(p=>p.seriesName==='小时用车数量');
+            const p1 = params.find(p=>p.seriesName==='小时平均时长(分钟)');
+            return `${params[0].axisValue}<br/>`
+                   + (p0? `数量：${nf0.format(p0.data)}<br/>`:'')
+                   + (p1? `平均时长：${nf2.format(p1.data)} 分钟`:'');
+          }
+        },
+        legend:{ data:['小时用车数量','小时平均时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
+        grid:{ top:36,left:50,right:18,bottom:40 },
+        xAxis:{ type:'category', data:hours, axisLabel:{ color:'#94a3b8' }, axisLine:{lineStyle:{color:'#334155'}} },
+        yAxis:[
+          { type:'value', name:'数量', min:0, max:yMax, nameTextStyle:{color:'#94a3b8'},
+            axisLabel:{ color:'#94a3b8', formatter:(v)=> nf0.format(v) }, splitLine:{lineStyle:{color:'#1f2937'}} },
+          { type:'value', name:'分钟', nameTextStyle:{color:'#94a3b8'},
+            axisLabel:{ color:'#94a3b8', formatter:(v)=> nf2.format(v) }, splitLine:{show:false} }
+        ],
+        series:[
+          { type:'bar',  name:'小时用车数量', data:counts, label:{show:false} },
+          { type:'line', name:'小时平均时长(分钟)', yAxisIndex:1, data:durationsMin, smooth:true, showSymbol:false }
+        ]
+      });
+    }
+
+    // ============ 功能2 ============
+    function initFeature2(data){
+      f2CombinedChart = echarts.init(document.getElementById('chart-f2-combined'));
+
+      function groupStats(days){
+        const N = days.length;
+        const totalCounts = sum(days.map(d=>d.total_counts));
+        // 平均每次时长（分钟）= sum(count*durationSec)/sum(count)/60
+        let durNum = 0, durDen = 0;
+        days.forEach(d=>{
+          const c = d.hourly_counts || [];
+          const ds= d.hourly_durations || [];
+          for(let i=0;i<24;i++){ durNum += (c[i]||0) * (ds[i]||0); durDen += (c[i]||0); }
+        });
+        const avgPerRideMin = durDen>0 ? (durNum/durDen/60) : 0;
+        const avgPerDay = N ? (totalCounts/N) : 0;
+        return { avgPerDay, avgPerRideMin, N, totalCounts };
+      }
+
+      function render(metric, threshold, sDate, eDate){
+        if(invalidRange(sDate, eDate)){ alert('开始日期不能晚于结束日期'); return; }
+        const sub = filterByDateRange(data, sDate, eDate);
+        const base = sub.length ? sub : data;
+
+        const thr = Number(threshold);
+        const leftDays  = base.filter(d => (d[metric] ?? Infinity) <  thr);
+        const rightDays = base.filter(d => (d[metric] ?? -Infinity) >= thr);
+
+        const L = groupStats(leftDays);
+        const R = groupStats(rightDays);
+
+        const diffAvgDay = R.avgPerDay - L.avgPerDay;
+        const pctDays = (L.N + R.N) ? (R.N/(L.N+R.N)*100) : 0;
+
+        document.getElementById('f2-diff').textContent =
+          `差值（平均每天）：${fmtc2(diffAvgDay)}；≥ 阈值天数占比：${fmtc2(pctDays)}%（日期 ${sDate||base[0]?.date||'最早'} ~ ${eDate||base[base.length-1]?.date||'最晚'}）`;
+
+        f2CombinedChart.setOption({
+          backgroundColor:'transparent',
+          tooltip:{ trigger:'axis', axisPointer:{ type:'shadow' },
+            formatter:(ps)=>{
+              const cat = ps[0]?.name || '';
+              const bar = ps.find(p=>p.seriesName==='平均每天骑行次数');
+              const line= ps.find(p=>p.seriesName==='平均每次时长(分钟)');
+              return `${cat}<br/>`
+                   + (bar? `平均每天：${nf2.format(bar.data)}<br/>`:'')
+                   + (line? `平均每次：${nf2.format(line.data)} 分钟`:'');
+            }
+          },
+          legend:{ data:['平均每天骑行次数','平均每次时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
+          grid:{ top:36,left:70,right:18,bottom:40 },
+          xAxis:{ type:'category', data:['< 阈值','≥ 阈值'], axisLabel:{ color:'#94a3b8' }, axisLine:{ lineStyle:{ color:'#334155' } } },
+          yAxis:[
+            { type:'value', name:'平均每天次数', axisLabel:{ color:'#94a3b8', formatter:(v)=> nf0.format(v) }, splitLine:{ lineStyle:{ color:'#1f2937' } } },
+            { type:'value', name:'分钟', axisLabel:{ color:'#94a3b8', formatter:(v)=> nf2.format(v) }, splitLine:{ show:false } }
+          ],
+          series:[
+            { type:'bar',  name:'平均每天骑行次数', data:[L.avgPerDay, R.avgPerDay],
+              label:{ show:true, position:'top', formatter:({data})=> nf2.format(data) } },
+            { type:'line', name:'平均每次时长(分钟)', yAxisIndex:1, data:[L.avgPerRideMin, R.avgPerRideMin],
+              smooth:true, showSymbol:false }
+          ]
+        });
+      }
+
+      const f2s = document.getElementById('f2-start').value;
+      const f2e = document.getElementById('f2-end').value;
+      render(document.getElementById('f2-metric').value, document.getElementById('f2-threshold').value, f2s, f2e);
+
+      document.getElementById('f2-apply').addEventListener('click', ()=>{
+        const metricSel = document.getElementById('f2-metric').value;
+        const thrInput  = document.getElementById('f2-threshold').value;
+        const s = document.getElementById('f2-start').value;
+        const e = document.getElementById('f2-end').value;
+        render(metricSel, thrInput, s, e);
+      });
+    }
+
+    // ============ 功能3 ============
+    function initFeature3(data){
+      mergedHourlyChart = echarts.init(document.getElementById('chart-merged-hourly'));
+
+      const f3s = document.getElementById('f3-start');
+      const f3e = document.getElementById('f3-end');
+      function removeZeroPressure(arr){ return arr.filter(d=> d.pressure !== 0); }
+
+      function updatePlaceholders(subData){
+        const arr = (key)=> subData.map(d=> d[key]).filter(v=>v!=null && !isNaN(v));
+        const setPH = (id,val)=> document.getElementById(id).placeholder = (val==null?'':fmt2(val));
+        const minOf = (a)=> a.length? Math.min(...a): null;
+        const maxOf = (a)=> a.length? Math.max(...a): null;
+
+        setPH('f3-avgtemp-min', minOf(arr('avg_temperature')));
+        setPH('f3-avgtemp-max', maxOf(arr('avg_temperature')));
+        setPH('f3-precip-min',  minOf(arr('precipitation')));
+        setPH('f3-precip-max',  maxOf(arr('precipitation')));
+        setPH('f3-wind-min',    minOf(arr('windspeed')));
+        setPH('f3-wind-max',    maxOf(arr('windspeed')));
+        setPH('f3-press-min',   minOf(arr('pressure')));
+        setPH('f3-press-max',   maxOf(arr('pressure')));
+      }
+
+      updatePlaceholders(removeZeroPressure(data));
+
+      const handleRangePH = ()=>{
+        const s = f3s.value, e = f3e.value;
+        if(invalidRange(s,e)){ alert('开始日期不能晚于结束日期'); return; }
+        const sub = removeZeroPressure( filterByDateRange(data, s, e) );
+        updatePlaceholders(sub.length? sub : removeZeroPressure(data));
+      };
+      f3s.addEventListener('change', handleRangePH);
+      f3e.addEventListener('change', handleRangePH);
+
+      function readSelectedWeekdays(){
+        const boxes = Array.from(document.querySelectorAll('#f3-weekdays input[type="checkbox"]'));
+        const selected = new Set(boxes.filter(b=>b.checked).map(b=> Number(b.getAttribute('data-wd'))));
+        return selected.size ? selected : new Set([0,1,2,3,4,5,6]);
+      }
+      function selectedWeekdaysText(sel){
+        const map = {1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六',0:'周日'};
+        const arr = Array.from(sel).map(v=>map[v]).sort((a,b)=>'一二三四五六日'.indexOf(a[1]) - '一二三四五六日'.indexOf(b[1]));
+        return arr.join('、');
+      }
+
+      function apply(){
+        const s = f3s.value, e = f3e.value;
+        if(invalidRange(s,e)){ alert('开始日期不能晚于结束日期'); return; }
+
+        const subAll = removeZeroPressure( filterByDateRange(data, s, e) );
+        const poolByDate = subAll.length? subAll : removeZeroPressure(data);
+
+        const selWD = readSelectedWeekdays();
+        let pool = poolByDate.filter(d => selWD.has(weekdayIndex(d.date)));
+
+        const v = (id)=> document.getElementById(id).value;
+        const conds=[`周几：${selectedWeekdaysText(selWD)}`];
+
+        const tmin = v('f3-avgtemp-min'); if(tmin!==''){ pool = pool.filter(d=> (d.avg_temperature ?? -Infinity) >= Number(tmin)); conds.push(`avg_temp ≥ ${tmin}`); }
+        const tmax = v('f3-avgtemp-max'); if(tmax!==''){ pool = pool.filter(d=> (d.avg_temperature ??  Infinity) <= Number(tmax)); conds.push(`avg_temp ≤ ${tmax}`); }
+        const pmin = v('f3-precip-min');  if(pmin!==''){ pool = pool.filter(d=> (d.precipitation ?? -Infinity) >= Number(pmin)); conds.push(`precip ≥ ${pmin}`); }
+        const pmax = v('f3-precip-max');  if(pmax!==''){ pool = pool.filter(d=> (d.precipitation ??  Infinity) <= Number(pmax)); conds.push(`precip ≤ ${pmax}`); }
+        const wmin = v('f3-wind-min');    if(wmin!==''){ pool = pool.filter(d=> (d.windspeed ?? -Infinity) >= Number(wmin)); conds.push(`wind ≥ ${wmin}`); }
+        const wmax = v('f3-wind-max');    if(wmax!==''){ pool = pool.filter(d=> (d.windspeed ??  Infinity) <= Number(wmax)); conds.push(`wind ≤ ${wmax}`); }
+        const prMin= v('f3-press-min');   if(prMin!==''){ pool = pool.filter(d=> (d.pressure ?? -Infinity) >= Number(prMin)); conds.push(`pressure ≥ ${prMin}`); }
+        const prMax= v('f3-press-max');   if(prMax!==''){ pool = pool.filter(d=> (d.pressure ??  Infinity) <= Number(prMax)); conds.push(`pressure ≤ ${prMax}`); }
+
+        const daysN = pool.length;
+        const totalCounts = sum(pool.map(d=>d.total_counts));
+        let globNum = 0, globDen = 0;
+        pool.forEach(d=>{
+          const c = d.hourly_counts || Array(24).fill(0);
+          const ds = d.hourly_durations || Array(24).fill(0);
+          for(let i=0;i<24;i++){ globNum += (c[i]||0) * (ds[i]||0); globDen += (c[i]||0); }
+        });
+        const globAvgMin = globDen>0 ? (globNum/globDen/60) : null;
+
+        document.getElementById('f3-days').textContent = fmtc0(daysN);
+        document.getElementById('f3-total-counts').textContent = fmtc0(totalCounts);
+        document.getElementById('f3-wavg-min').textContent = fmtc2(globAvgMin);
+        const rangeText = `${poolByDate[0]?.date||'—'} ~ ${poolByDate[poolByDate.length-1]?.date||'—'}`;
+        document.getElementById('f3-cond-text').textContent = conds.length ? `${rangeText}；${conds.join('，')}` : `${rangeText}；无额外条件`;
+
+        // —— 平均每小时（匹配天数内总次数 / 匹配天数）+ 带权分钟 ——
+        let sumCounts = Array(24).fill(0);
+        let durNum = Array(24).fill(0);
+        let durDen = Array(24).fill(0);
+        pool.forEach(d=>{
+          const c = d.hourly_counts || Array(24).fill(0);
+          const ds = d.hourly_durations || Array(24).fill(0);
+          sumCounts = arrAdd(sumCounts, c);
+          for(let i=0;i<24;i++){ durNum[i] += (c[i]||0) * (ds[i]||0); durDen[i] += (c[i]||0); }
+        });
+        const avgCountsPerHour = sumCounts.map(v => daysN ? v / daysN : 0);
+        const mergedDurMin = durNum.map((num,i)=> durDen[i]>0 ? Number(fmt2((num/durDen[i])/60)) : 0);
+
+        // y 轴上限：按“当前数据”的最大平均每小时值，取 1200 的整倍数（至少 1200）
+        const maxHourAvg = Math.max(...avgCountsPerHour.map(v=>+v||0), 0);
+        const yMax3 = Math.max(1200, Math.ceil(maxHourAvg/1200)*1200);
+
+        mergedHourlyChart.setOption({
+          backgroundColor:'transparent',
+          tooltip:{ trigger:'axis',
+            formatter:(params)=>{
+              const p0 = params.find(p=>p.seriesName==='平均每小时用车数量');
+              const p1 = params.find(p=>p.seriesName==='小时平均时长(分钟)');
+              return `${params[0].axisValue}<br/>`
+                     + (p0? `平均每小时：${nf2.format(p0.data)}<br/>`:'')
+                     + (p1? `平均时长：${nf2.format(p1.data)} 分钟`:'');
+            }
+          },
+          legend:{ data:['平均每小时用车数量','小时平均时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
+          // 让大数字不被截断
+          grid:{ top:36,left:86,right:18,bottom:40 },
+          xAxis:{ type:'category', data:hours, axisLabel:{ color:'#94a3b8' }, axisLine:{lineStyle:{color:'#334155'}} },
+          yAxis:[
+            { type:'value', name:'平均每小时数量', min:0, max:yMax3, nameTextStyle:{color:'#94a3b8'},
+              axisLabel:{ color:'#94a3b8', formatter:(v)=> nf0.format(v) }, splitLine:{lineStyle:{color:'#1f2937'}} },
+            { type:'value', name:'分钟', nameTextStyle:{color:'#94a3b8'},
+              axisLabel:{ color:'#94a3b8', formatter:(v)=> nf2.format(v) }, splitLine:{show:false} }
+          ],
+          series:[
+            { type:'bar',  name:'平均每小时用车数量', data:avgCountsPerHour, label:{show:false} },
+            { type:'line', name:'小时平均时长(分钟)', yAxisIndex:1, data:mergedDurMin, smooth:true, showSymbol:false }
+          ]
+        });
+      }
+
+      apply();
+      document.getElementById('f3-apply').addEventListener('click', apply);
+      document.getElementById('f3-weekdays').addEventListener('change', apply);
+    }
+
+    // 自适应
+    window.addEventListener('resize', ()=>[dailyChart,hourlyChart,f2CombinedChart,mergedHourlyChart].forEach(c=>c?.resize()));
+  </script>
+</body>
+</html>

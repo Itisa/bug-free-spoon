@@ -1,0 +1,6 @@
+__pycache__
+migrations
+todolist
+*.sqlite3
+.DS_Store
+secret_settings.py
