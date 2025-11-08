@@ -14,7 +14,7 @@
     .layout{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 66px)}
     nav{border-right:1px solid var(--border);background:linear-gradient(180deg,#0b1020,#0b0f1a);padding:16px;position:sticky;top:66px;height:calc(100vh - 66px);overflow:auto}
     .nav-title{font-size:12px;color:var(--muted);margin:6px 0 12px;letter-spacing:.1em;text-transform:uppercase}
-    .nav-btn{width:100%;text-align:left;background:#0f172a;border:1px solid var(--border);color:#e5e7eb;padding:10px 12px;border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.2s;font-size:14px}
+    .nav-btn{width:100%;text-align:left;background:#0f172a;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:12px;margin-bottom:10px;cursor:pointer;transition:.2s;font-size:14px}
     .nav-btn:hover{border-color:#334155;transform:translateY(-1px)} .nav-btn.active{outline:2px solid var(--acc)}
     .content{padding:18px}
     .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:16px}
@@ -42,7 +42,7 @@
 <body>
   <header>
     <h1>城市公共自行车 · 数据可视化</h1>
-    <div class="hint">数据源：/bikes/api · ECharts</div>
+    <div class="hint">{{ hint }}</div>
   </header>
 
   <div class="layout">
@@ -169,7 +169,7 @@
           <div class="field"><label>风速 Max</label><input type="number" id="f3-wind-max" placeholder="" /></div>
           <div class="field"><label>气压 Min</label><input type="number" id="f3-press-min" placeholder="" /></div>
           <div class="field"><label>气压 Max</label><input type="number" id="f3-press-max" placeholder="" /></div>
-          <div class="field"><button class="nav-btn" id="f3-apply">筛选并合成</button></div>
+          <div class="field"><button class="nav-btn" id="f3-apply">筛选并合成（Enter）</button></div>
         </div>
 
         <div class="kpi" style="margin-bottom:8px;">
@@ -314,7 +314,7 @@
             formatter:(ps)=>{
               const p = Array.isArray(ps)? ps[0] : ps;
               const date = p.axisValue;
-              return `${date}（${weekdayZh(date)}）<br/>每日用车数量：${nf0.format(p.data)}`;
+              return `${date}（${weekdayZh(date)}\n每日用车数量：${nf0.format(p.data)}`;
             }
           },
           dataZoom:[{type:'inside'},{type:'slider'}],
@@ -419,22 +419,23 @@
       const counts = (d.hourly_counts||Array(24).fill(0));
       const durationsMin = (d.hourly_durations||Array(24).fill(0)).map(secToMin).map(x=> Number(fmt2(x)));
 
-      // 当前天的数量轴：向上取到 1000 的整倍数（至少 1000）
+      // 功能1小时图 y 轴：按当前天最大值取 1000 的倍数（至少 1000）
       const maxCount = Math.max(...counts.map(v=>+v||0), 0);
       const yMax = Math.max(1000, Math.ceil(maxCount / 1000) * 1000);
 
       hourlyChart.setOption({
         backgroundColor:'transparent',
-        tooltip:{ trigger:'axis',
+        tooltip:{ 
+          trigger:'axis',
           formatter:(params)=>{
             const p0 = params.find(p=>p.seriesName==='小时用车数量');
-            const p1 = params.find(p=>p.seriesName==='小时平均时长(分钟)');
+            const p1 = params.find(p=>p.seriesName==='小时平均骑行时长(分钟)');
             return `${params[0].axisValue}<br/>`
                    + (p0? `数量：${nf0.format(p0.data)}<br/>`:'')
                    + (p1? `平均时长：${nf2.format(p1.data)} 分钟`:'');
           }
         },
-        legend:{ data:['小时用车数量','小时平均时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
+        legend:{ data:['小时用车数量','小时平均骑行时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
         grid:{ top:36,left:50,right:18,bottom:40 },
         xAxis:{ type:'category', data:hours, axisLabel:{ color:'#94a3b8' }, axisLine:{lineStyle:{color:'#334155'}} },
         yAxis:[
@@ -445,7 +446,7 @@
         ],
         series:[
           { type:'bar',  name:'小时用车数量', data:counts, label:{show:false} },
-          { type:'line', name:'小时平均时长(分钟)', yAxisIndex:1, data:durationsMin, smooth:true, showSymbol:false }
+          { type:'line', name:'小时平均骑行时长(分钟)', yAxisIndex:1, data:durationsMin, smooth:true, showSymbol:false }
         ]
       });
     }
@@ -457,7 +458,7 @@
       function groupStats(days){
         const N = days.length;
         const totalCounts = sum(days.map(d=>d.total_counts));
-        // 平均每次时长（分钟）= sum(count*durationSec)/sum(count)/60
+        // 平均每次时长（分钟）
         let durNum = 0, durDen = 0;
         days.forEach(d=>{
           const c = d.hourly_counts || [];
@@ -634,14 +635,13 @@
           tooltip:{ trigger:'axis',
             formatter:(params)=>{
               const p0 = params.find(p=>p.seriesName==='平均每小时用车数量');
-              const p1 = params.find(p=>p.seriesName==='小时平均时长(分钟)');
+              const p1 = params.find(p=>p.seriesName==='小时平均骑行时长(分钟)');
               return `${params[0].axisValue}<br/>`
                      + (p0? `平均每小时：${nf2.format(p0.data)}<br/>`:'')
                      + (p1? `平均时长：${nf2.format(p1.data)} 分钟`:'');
             }
           },
-          legend:{ data:['平均每小时用车数量','小时平均时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
-          // 让大数字不被截断
+          legend:{ data:['平均每小时用车数量','小时平均骑行时长(分钟)'], textStyle:{ color:'#cbd5e1' } },
           grid:{ top:36,left:86,right:18,bottom:40 },
           xAxis:{ type:'category', data:hours, axisLabel:{ color:'#94a3b8' }, axisLine:{lineStyle:{color:'#334155'}} },
           yAxis:[
@@ -652,14 +652,26 @@
           ],
           series:[
             { type:'bar',  name:'平均每小时用车数量', data:avgCountsPerHour, label:{show:false} },
-            { type:'line', name:'小时平均时长(分钟)', yAxisIndex:1, data:mergedDurMin, smooth:true, showSymbol:false }
+            { type:'line', name:'小时平均骑行时长(分钟)', yAxisIndex:1, data:mergedDurMin, smooth:true, showSymbol:false }
           ]
         });
       }
 
+      // 初次渲染一次
       apply();
+
+      // 点击按钮 → 应用
       document.getElementById('f3-apply').addEventListener('click', apply);
-      document.getElementById('f3-weekdays').addEventListener('change', apply);
+
+      // Enter 快捷键：在“功能3”范围内按下 Enter 等同点击“筛选并合成”
+      const feature3El = document.getElementById('feature3');
+      feature3El.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          apply();
+        }
+      });
+
     }
 
     // 自适应

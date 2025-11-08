@@ -24,11 +24,12 @@ SECRET_KEY = "eriojegioergjgoeji"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+ALLOWED_HOSTS = []
+HINT_TEXT = "数据可视化作业示例"
 try:
-    from .secret_settings import SECRET_KEY, DEBUG
+    from .secret_settings import *
 except ImportError:
     pass
-ALLOWED_HOSTS = []
 
 
 # Application definition
