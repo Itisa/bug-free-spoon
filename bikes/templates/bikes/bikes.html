@@ -89,8 +89,8 @@
           <h2 id="f1-detail-title" class="muted">小时详情</h2>
           <div id="chart-hourly" class="chart tall"></div>
 
-          <!-- 功能1 · 固定柱状图Y轴上限 控件 -->
-          <div class="controls" id="f1-ymax-controls" style="margin: 6px 0 10px;">
+          <!-- 功能1 · 固定柱状图Y轴上限 控件（放在图表下方） -->
+          <div class="controls" id="f1-ymax-controls" style="margin: 10px 0 0;">
             <div class="field">
               <label><input type="checkbox" id="f1-yfix-toggle" /> 固定柱状图 Y 轴上限</label>
             </div>
@@ -102,7 +102,6 @@
               <button class="nav-btn" id="f1-yfix-apply" disabled>应用上限</button>
             </div>
           </div>
-
         </div>
       </section>
 
@@ -158,7 +157,7 @@
           </div>
         </div>
 
-        <!-- 周几筛选（默认全选） -->
+        <!-- 周几筛选（默认全选，不自动刷新） -->
         <div class="controls" style="margin-bottom:8px;">
           <div class="field lg" style="grid-column:span 12;">
             <label>按周几筛选（默认全选）</label>
@@ -188,7 +187,7 @@
           </div>
         </div>
 
-        <!-- 功能3 · 固定柱状图Y轴上限 控件（平均每小时数量） -->
+        <!-- 功能3 · 固定柱状图Y轴上限 控件（平均每小时数量，按1200倍数） -->
         <div class="controls" id="f3-ymax-controls" style="margin: 6px 0 10px;">
           <div class="field">
             <label><input type="checkbox" id="f3-yfix-toggle" /> 固定柱状图 Y 轴上限（平均每小时）</label>
@@ -227,7 +226,7 @@
     const HEADER_H = () => document.querySelector('header')?.offsetHeight || 60;
     function smoothScrollToEl(el){ if(!el) return; const y = el.getBoundingClientRect().top + window.scrollY - (HEADER_H() + 12); window.scrollTo({ top:y, behavior:'smooth' }); }
     function weekdayZh(isoDate){ const d = new Date(isoDate + 'T00:00:00'); return ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]; }
-    function weekdayIndex(isoDate){ return new Date(isoDate + 'T00:00:00').getDay(); } // 0=周日..6=周六
+    function weekdayIndex(isoDate){ return new Date(isoDate + 'T00:00:00').getDay(); } // 0..6
 
     // —— 显示用千分位（不要参与计算）——
     const nf0 = new Intl.NumberFormat('en-US'); // 1,234
@@ -253,30 +252,25 @@
       return data;
     }
 
-    // ===== 日期范围过滤 & 校验 =====
+    // ===== 日期过滤 & 校验 =====
     function filterByDateRange(data, startStr, endStr){
       if(!startStr && !endStr) return data;
       const s = startStr ? parseDate(startStr).getTime() : -Infinity;
       const e = endStr ? parseDate(endStr).getTime() :  Infinity;
       return data.filter(d=> { const t = parseDate(d.date).getTime(); return t>=s && t<=e; });
     }
-    function invalidRange(startStr, endStr){
-      if(!startStr || !endStr) return false;
-      return startStr > endStr;
-    }
+    function invalidRange(startStr, endStr){ if(!startStr || !endStr) return false; return startStr > endStr; }
 
     // ===== ECharts 实例 =====
     let dailyChart, hourlyChart, f2CombinedChart, mergedHourlyChart;
 
-    // 功能1 当前视图信息
+    // 功能1状态
     let f1ViewDates = [];
     let f1SelectedDate = '';
-
-    // 功能1 固定 Y 轴状态
     let f1YFixEnabled = false;
     let f1YFixMax = 2000;
 
-    // 功能3 固定 Y 轴状态（平均每小时）
+    // 功能3状态（平均每小时）
     let f3YFixEnabled = false;
     let f3YFixMax = 2400;
 
@@ -294,7 +288,7 @@
 
       const data = await loadData();
 
-      // 默认日期：最早~最晚（功能1/2/3）
+      // 默认日期
       if(data.length){
         const first = data[0].date, last = data[data.length-1].date;
         const setIfEmpty = (id,val)=>{ const el=document.getElementById(id); if(el && !el.value) el.value = val; };
@@ -308,11 +302,10 @@
       initFeature2(data);
       initFeature3(data);
 
-      // ===== 功能1固定Y轴 控件事件 =====
+      // 功能1固定Y轴控件
       const yfixToggle1 = document.getElementById('f1-yfix-toggle');
       const yfixValue1  = document.getElementById('f1-yfix-value');
       const yfixApply1  = document.getElementById('f1-yfix-apply');
-
       yfixToggle1.addEventListener('change', ()=>{
         f1YFixEnabled = yfixToggle1.checked;
         yfixValue1.disabled = yfixApply1.disabled = !f1YFixEnabled;
@@ -321,7 +314,6 @@
           if(d) showHourlyDetail(d);
         }
       });
-
       yfixApply1.addEventListener('click', ()=>{
         f1YFixMax = ceilTo1000(yfixValue1.value);
         yfixValue1.value = f1YFixMax;
@@ -332,37 +324,29 @@
       });
       yfixValue1.addEventListener('keydown', (e)=>{ if(e.key==='Enter') yfixApply1.click(); });
 
-      // ===== 功能3固定Y轴 控件事件 =====
+      // 功能3固定Y轴控件（不自动刷新，等待 apply）
       const yfixToggle3 = document.getElementById('f3-yfix-toggle');
       const yfixValue3  = document.getElementById('f3-yfix-value');
       const yfixApply3  = document.getElementById('f3-yfix-apply');
-
       yfixToggle3.addEventListener('change', ()=>{
         f3YFixEnabled = yfixToggle3.checked;
         yfixValue3.disabled = yfixApply3.disabled = !f3YFixEnabled;
-        // 不自动刷新；等待用户点击“筛选并合成”或按 Enter
       });
-
       yfixApply3.addEventListener('click', ()=>{
         f3YFixMax = ceilTo1200(yfixValue3.value);
         yfixValue3.value = f3YFixMax;
-        // 同上，不自动刷新；等待 apply()
       });
       yfixValue3.addEventListener('keydown', (e)=>{ if(e.key==='Enter') yfixApply3.click(); });
     });
 
-    // ============ 功能1 ============
+    // ===== 功能1 =====
     function f1GoPrev(data){
       if(!f1ViewDates.length) return;
       const i = Math.max(0, f1ViewDates.indexOf(f1SelectedDate));
       const ni = Math.max(0, i-1);
       const date = f1ViewDates[ni];
       const found = data.find(d=>d.date===date);
-      if(found){
-        f1SelectedDate = date;
-        showDaySummary(found); showHourlyDetail(found);
-        smoothScrollToEl(document.getElementById('f1-day-summary'));
-      }
+      if(found){ f1SelectedDate = date; showDaySummary(found); showHourlyDetail(found); smoothScrollToEl(document.getElementById('f1-day-summary')); }
     }
     function f1GoNext(data){
       if(!f1ViewDates.length) return;
@@ -370,11 +354,7 @@
       const ni = Math.min(f1ViewDates.length-1, i+1);
       const date = f1ViewDates[ni];
       const found = data.find(d=>d.date===date);
-      if(found){
-        f1SelectedDate = date;
-        showDaySummary(found); showHourlyDetail(found);
-        smoothScrollToEl(document.getElementById('f1-day-summary'));
-      }
+      if(found){ f1SelectedDate = date; showDaySummary(found); showHourlyDetail(found); smoothScrollToEl(document.getElementById('f1-day-summary')); }
     }
 
     function initFeature1(data){
@@ -398,13 +378,9 @@
           },
           dataZoom:[{type:'inside'},{type:'slider'}],
           grid:{top:28,left:48,right:16,bottom:48},
-          xAxis:{ type:'category', data:f1ViewDates, boundaryGap:false,
-                  axisLabel:{ color:'#94a3b8' }, axisLine:{ lineStyle:{color:'#334155'} } },
+          xAxis:{ type:'category', data:f1ViewDates, boundaryGap:false, axisLabel:{ color:'#94a3b8' }, axisLine:{ lineStyle:{color:'#334155'} } },
           yAxis:{ type:'value', axisLabel:{ color:'#94a3b8', formatter:(v)=> nf0.format(v) }, splitLine:{ lineStyle:{ color:'#1f2937'} } },
-          series:[{
-            type:'line', name:'每日用车数量', showSymbol:false, lineStyle:{ width:2 },
-            data:y, sampling:'lttb', animation:false
-          }]
+          series:[{ type:'line', name:'每日用车数量', showSymbol:false, lineStyle:{ width:2 }, data:y, sampling:'lttb', animation:false }]
         });
 
         if(!f1SelectedDate || !f1ViewDates.includes(f1SelectedDate)){
@@ -428,11 +404,7 @@
         if(params.componentType==='series'){
           const date = params.name;
           const found = data.find(d=>d.date===date);
-          if(found){
-            f1SelectedDate = date;
-            showDaySummary(found); showHourlyDetail(found);
-            smoothScrollToEl(document.getElementById('f1-day-summary'));
-          }
+          if(found){ f1SelectedDate = date; showDaySummary(found); showHourlyDetail(found); smoothScrollToEl(document.getElementById('f1-day-summary')); }
         }
       });
 
@@ -444,11 +416,7 @@
         let xIdx = Math.max(0, Math.min(xData.length-1, Math.round(coord[0])));
         const date = xData[xIdx];
         const found = data.find(d=>d.date===date);
-        if(found){
-          f1SelectedDate = date;
-          showDaySummary(found); showHourlyDetail(found);
-          smoothScrollToEl(document.getElementById('f1-day-summary'));
-        }
+        if(found){ f1SelectedDate = date; showDaySummary(found); showHourlyDetail(found); smoothScrollToEl(document.getElementById('f1-day-summary')); }
       });
 
       document.getElementById('f1-prev').addEventListener('click', ()=>f1GoPrev(data));
@@ -521,7 +489,7 @@
       });
     }
 
-    // ============ 功能2 ============
+    // ===== 功能2 =====
     function initFeature2(data){
       f2CombinedChart = echarts.init(document.getElementById('chart-f2-combined'));
 
@@ -536,7 +504,7 @@
         });
         const avgPerRideMin = durDen>0 ? (durNum/durDen/60) : 0;
         const avgPerDay = N ? (totalCounts/N) : 0;
-        return { avgPerDay, avgPerRideMin, N, totalCounts };
+        return { avgPerDay, avgPerRideMin, N };
       }
 
       function render(metric, threshold, sDate, eDate){
@@ -598,7 +566,7 @@
       });
     }
 
-    // ============ 功能3 ============
+    // ===== 功能3 =====
     function initFeature3(data){
       mergedHourlyChart = echarts.init(document.getElementById('chart-merged-hourly'));
 
@@ -644,7 +612,7 @@
         return arr.join('、');
       }
 
-      function apply(){
+      function apply(opts = { scrollToChart: false }){
         const s = f3s.value, e = f3e.value;
         if(invalidRange(s,e)){ alert('开始日期不能晚于结束日期'); return; }
 
@@ -682,7 +650,7 @@
         const rangeText = `${poolByDate[0]?.date||'—'} ~ ${poolByDate[poolByDate.length-1]?.date||'—'}`;
         document.getElementById('f3-cond-text').textContent = conds.length ? `${rangeText}；${conds.join('，')}` : `${rangeText}；无额外条件`;
 
-        // —— 平均每小时（匹配天数内总次数 / 匹配天数）+ 带权分钟 ——
+        // 平均每小时（匹配天数内总次数 / 匹配天数）+ 带权分钟
         let sumCounts = Array(24).fill(0);
         let durNum = Array(24).fill(0);
         let durDen = Array(24).fill(0);
@@ -695,7 +663,7 @@
         const avgCountsPerHour = sumCounts.map(v => daysN ? v / daysN : 0);
         const mergedDurMin = durNum.map((num,i)=> durDen[i]>0 ? Number(fmt2((num/durDen[i])/60)) : 0);
 
-        // y 轴上限：自动=1200整倍数；若固定则用固定值（同样取整到1200倍数）
+        // y 轴上限：自动=1200整倍数；若固定则用固定值
         const maxHourAvg = Math.max(...avgCountsPerHour.map(v=>+v||0), 0);
         const autoMax3 = ceilTo1200(maxHourAvg);
         const yMax3 = f3YFixEnabled ? ceilTo1200(f3YFixMax) : autoMax3;
@@ -725,21 +693,26 @@
             { type:'line', name:'小时平均时长(分钟)', yAxisIndex:1, data:mergedDurMin, smooth:true, showSymbol:false }
           ]
         });
+
+        // 按需滚到图表
+        if (opts.scrollToChart) {
+          smoothScrollToEl(document.getElementById('chart-merged-hourly'));
+        }
       }
 
-      // 初次渲染一次
-      apply();
+      // 初次渲染（不滚动）
+      apply({ scrollToChart: false });
 
-      // 点击按钮 → 应用
-      document.getElementById('f3-apply').addEventListener('click', apply);
+      // 点击按钮 → 应用并滚动
+      document.getElementById('f3-apply').addEventListener('click', ()=>apply({ scrollToChart: true }));
 
-      // Enter 快捷键（功能3区域内）
+      // Enter 快捷键（功能3区域内，应用并滚动）
       const feature3El = document.getElementById('feature3');
       feature3El.addEventListener('keydown', (e)=>{
-        if(e.key === 'Enter'){ e.preventDefault(); apply(); }
+        if(e.key === 'Enter'){ e.preventDefault(); apply({ scrollToChart: true }); }
       });
 
-      // 注意：不监听“星期”change 自动更新（按你的要求）
+      // 不监听“星期”change 自动更新（按要求）
     }
 
     // 自适应
