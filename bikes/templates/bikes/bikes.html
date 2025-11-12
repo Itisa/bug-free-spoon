@@ -41,7 +41,7 @@
 <body>
   <header>
     <h1>城市公共自行车 · 数据可视化</h1>
-    <div class="hint">数据源：/bikes/api · ECharts</div>
+    <div class="hint">{{ hint }}</div>
   </header>
 
   <div class="layout">
@@ -88,8 +88,7 @@
         <div class="card">
           <h2 id="f1-detail-title" class="muted">小时详情</h2>
           <div id="chart-hourly" class="chart tall"></div>
-
-          <!-- 功能1 · 固定柱状图Y轴上限 控件（放在图表下方） -->
+          <!-- 功能1：固定柱状图Y轴（在图表下方） -->
           <div class="controls" id="f1-ymax-controls" style="margin: 10px 0 0;">
             <div class="field">
               <label><input type="checkbox" id="f1-yfix-toggle" /> 固定柱状图 Y 轴上限</label>
@@ -187,7 +186,7 @@
           </div>
         </div>
 
-        <!-- 功能3 · 固定柱状图Y轴上限 控件（平均每小时数量，按1200倍数） -->
+        <!-- 功能3：固定柱状图Y轴（平均每小时，按1200倍数） -->
         <div class="controls" id="f3-ymax-controls" style="margin: 6px 0 10px;">
           <div class="field">
             <label><input type="checkbox" id="f3-yfix-toggle" /> 固定柱状图 Y 轴上限（平均每小时）</label>
@@ -214,7 +213,7 @@
   </div>
 
   <script>
-    // ===== 工具函数 =====
+    // ================= 工具函数 =================
     const fmt2 = (n) => (n==null || isNaN(n)) ? '—' : Number(n).toFixed(2);
     const parseDate = (s) => new Date(s + 'T00:00:00');
     const sum = (arr) => (arr||[]).reduce((a,b)=>a+(+b||0),0);
@@ -226,23 +225,50 @@
     const HEADER_H = () => document.querySelector('header')?.offsetHeight || 60;
     function smoothScrollToEl(el){ if(!el) return; const y = el.getBoundingClientRect().top + window.scrollY - (HEADER_H() + 12); window.scrollTo({ top:y, behavior:'smooth' }); }
     function weekdayZh(isoDate){ const d = new Date(isoDate + 'T00:00:00'); return ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]; }
-    function weekdayIndex(isoDate){ return new Date(isoDate + 'T00:00:00').getDay(); } // 0..6
+    function weekdayIndex(isoDate){ return new Date(isoDate + 'T00:00:00').getDay(); }
 
-    // —— 显示用千分位（不要参与计算）——
-    const nf0 = new Intl.NumberFormat('en-US'); // 1,234
-    const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); // 1,234.56
+    // 展示格式
+    const nf0 = new Intl.NumberFormat('en-US');
+    const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtc0 = (n) => (n==null || isNaN(n)) ? '—' : nf0.format(Math.round(Number(n)));
     const fmtc2 = (n) => (n==null || isNaN(n)) ? '—' : nf2.format(Number(n));
 
-    // —— 轴上限取整工具 —— 
+    // 轴上限取整
     const ceilTo1000 = (n) => Math.max(1000, Math.ceil((Number(n)||0)/1000)*1000);
     const ceilTo1200 = (n) => Math.max(1200, Math.ceil((Number(n)||0)/1200)*1200);
 
-    // ===== 数据获取 =====
+    // ============ 日期过滤 & 校验（显式定义，避免未定义） ============
+    function filterByDateRange(data, startStr, endStr){
+      if(!startStr && !endStr) return data;
+      const s = startStr ? parseDate(startStr).getTime() : -Infinity;
+      const e = endStr ? parseDate(endStr).getTime() :  Infinity;
+      return data.filter(d=> { const t = parseDate(d.date).getTime(); return t>=s && t<=e; });
+    }
+    function invalidRange(startStr, endStr){
+      if(!startStr || !endStr) return false;
+      return startStr > endStr;
+    }
+
+    // ================= v2 API 加载器 =================
+    // v2 记录: { d:'YYYY-MM-DD', c:int[24], s:int[24] (秒), w:[avg,min,max,precip,wind,snow,pressure] }
     async function loadData(){
-      const res = await fetch('/bikes/api');
+      const res = await fetch('/bikes/api?v=2', { headers: { 'Accept': 'application/json' }});
       if(!res.ok) throw new Error('API 请求失败');
-      const data = await res.json();
+      const raw = await res.json();
+
+      const data = raw.map(rec => ({
+        date: rec.d,
+        hourly_counts: rec.c,
+        hourly_durations: rec.s,
+        avg_temperature: rec.w[0],
+        min_temperature: rec.w[1],
+        max_temperature: rec.w[2],
+        precipitation: rec.w[3],
+        windspeed: rec.w[4],
+        snow: rec.w[5],
+        pressure: rec.w[6]
+      }));
+
       data.sort((a,b)=> parseDate(a.date) - parseDate(b.date));
       data.forEach(d=>{
         d.total_counts = sum(d.hourly_counts||[]);
@@ -252,28 +278,13 @@
       return data;
     }
 
-    // ===== 日期过滤 & 校验 =====
-    function filterByDateRange(data, startStr, endStr){
-      if(!startStr && !endStr) return data;
-      const s = startStr ? parseDate(startStr).getTime() : -Infinity;
-      const e = endStr ? parseDate(endStr).getTime() :  Infinity;
-      return data.filter(d=> { const t = parseDate(d.date).getTime(); return t>=s && t<=e; });
-    }
-    function invalidRange(startStr, endStr){ if(!startStr || !endStr) return false; return startStr > endStr; }
-
-    // ===== ECharts 实例 =====
+    // ================= 全局状态 & 图表实例 =================
     let dailyChart, hourlyChart, f2CombinedChart, mergedHourlyChart;
+    let f1ViewDates = [], f1SelectedDate = '';
+    let f1YFixEnabled = false, f1YFixMax = 2000;
+    let f3YFixEnabled = false, f3YFixMax = 2400;
 
-    // 功能1状态
-    let f1ViewDates = [];
-    let f1SelectedDate = '';
-    let f1YFixEnabled = false;
-    let f1YFixMax = 2000;
-
-    // 功能3状态（平均每小时）
-    let f3YFixEnabled = false;
-    let f3YFixMax = 2400;
-
+    // ================= 启动 =================
     document.addEventListener('DOMContentLoaded', async ()=>{
       document.querySelectorAll('.nav-btn[data-target]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
@@ -288,7 +299,7 @@
 
       const data = await loadData();
 
-      // 默认日期
+      // 初始化日期
       if(data.length){
         const first = data[0].date, last = data[data.length-1].date;
         const setIfEmpty = (id,val)=>{ const el=document.getElementById(id); if(el && !el.value) el.value = val; };
@@ -339,7 +350,7 @@
       yfixValue3.addEventListener('keydown', (e)=>{ if(e.key==='Enter') yfixApply3.click(); });
     });
 
-    // ===== 功能1 =====
+    // ================= 功能1 =================
     function f1GoPrev(data){
       if(!f1ViewDates.length) return;
       const i = Math.max(0, f1ViewDates.indexOf(f1SelectedDate));
@@ -489,7 +500,7 @@
       });
     }
 
-    // ===== 功能2 =====
+    // ================= 功能2 =================
     function initFeature2(data){
       f2CombinedChart = echarts.init(document.getElementById('chart-f2-combined'));
 
@@ -566,7 +577,7 @@
       });
     }
 
-    // ===== 功能3 =====
+    // ================= 功能3 =================
     function initFeature3(data){
       mergedHourlyChart = echarts.init(document.getElementById('chart-merged-hourly'));
 
@@ -695,9 +706,7 @@
         });
 
         // 按需滚到图表
-        if (opts.scrollToChart) {
-          smoothScrollToEl(document.getElementById('chart-merged-hourly'));
-        }
+        if (opts.scrollToChart) smoothScrollToEl(document.getElementById('chart-merged-hourly'));
       }
 
       // 初次渲染（不滚动）
